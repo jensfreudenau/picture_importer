@@ -1,6 +1,5 @@
 #!/bin/bash 
 target='/Volumes/HD-PATU3/Bilder'
-target='/Users/jensfreudenau'
 backup='/Volumes/Backup+/Bilder'
 /usr/bin/killall PTPCamera
 year=''
