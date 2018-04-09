@@ -1,21 +1,20 @@
 #!/bin/bash 
 target='/Volumes/HD-PATU3/Bilder'
+target='/Users/jensfreudenau'
 backup='/Volumes/Backup+/Bilder'
-cameraType=$1
 /usr/bin/killall PTPCamera
-importFiles() { 
-	find . -type f \( -iname "*.jpg" -o -iname "*.cr2" -o -iname "*.raf"  \) -print0 | while IFS= read -r -d '' file; do	 
-		datestring="$(mdls  -raw  -name kMDItemFSCreationDate "$file" | awk '{print $1}' )"	
-		splitDates $datestring
-		createImageDirectory $backup  
-		cp $file $directory
-		createImageDirectory $target 
-		cp $file $directory	
-		echo $directory/$file >> ~/Pictures/importer/$(date +%Y%m%d)_imported.txt		
-	done
-}
+year=''
+month=''
+day=''
+cameraType=$1
 
-createDng() {	
+if [ -z "cameraType" ]; then
+    echo "camera type is empty"
+    exit
+fi
+
+createDng() {
+	
 	if [ "$cameraType" == "canon" ];
 	then
 		fileEnding="*.CR2"
@@ -23,47 +22,63 @@ createDng() {
 	then	
 		fileEnding="*.RAF"
 	else 
-		echo "no camera type" 
+		echo "++++++++++++++"
+		echo "no camera type"
+		echo "++++++++++++++" 
 		exit
 	fi 
-	exportDir=$directory/dng
-	if [ ! -d "$exportDir" ]; then
-	  	mkdir -p "$exportDir"
-	fi
-	open -a "/Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter" --args -d $exportDir $directory/$fileEnding
+	
+	for val in ${exportDirSammlung[*]}
+	do 
+		cd $val
+		directory=$(pwd) 
+		echo "create dng files in $val/dng from $directory/$fileEnding"	
+		open -a "/Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter" --args -d $exportDir $directory/$fileEnding
+	done	 
 }
 
-createImportDir () {
+createImportDir () {	
 	impDirectory=~/$(date +%Y%m%d)
+	echo "create import directory $impDirectory"
  	if [ ! -d "$impDirectory" ]; then
-  		mkdir -p "$impDirectory"
+  		mkdir -pv "$impDirectory"
 	fi
 	cd $impDirectory
    	/usr/local/bin/gphoto2 --get-all-files 
-     
+   	shopt -s nullglob   
+   	importSammlung=(*)
+    shopt -u nullglob      
+}
+
+deleteImportDir(){
+	echo "delete import directory$impDirectory" 
+	rm -r $impDirectory
 }
 
 createImageDirectory() {
-	volume=$1 	
-	directory=$volume/$year/$month/$day
-	if (( ${month##0} > 12 )) || (( ${day##0} > 31 ));
-    then
-        printf '%s\n' "invalid date: $directory" >&2
-        exit
-    fi  
-	if [ ! -d "$directory" ]; then
-  		mkdir -pv "$directory"
-	fi
-	 
+	for value in ${importSammlung[*]}
+	do
+		DATEBITS=( $(exiftool -CreateDate -FileModifyDate -DateTimeOriginal "$value" | awk -F: '{ print $2 ":" $3 ":" $4 ":" $5 ":" $6 }' | sed 's/+[0-9]*//' | sort | grep -v 1970: | cut -d: -f1-6 | tr ':' ' ' | head -1) )
+		year=${DATEBITS[0]}
+		month=${DATEBITS[1]}
+		day=${DATEBITS[2]}	
+		echo "split dates in to:" $year/$month/$day
+		directory=$target/$year/$month/$day
+		exportDirSammlung=($directory)
+		exportDir=$directory/dng
+		
+		if [ ! -d "$directory" ]; then
+  			mkdir -pv "$directory"
+  			mkdir -pv "$exportDir"
+		fi
+		cp $value $directory	
+		
+	done	
 }
+ 
 
-splitDates() {
-	inputDate=$1
-	year=$(awk -F- '{print $1}' <<<$inputDate)	 
-	month=$(awk -F- '{print $2}' <<<$inputDate)
-	day=$(awk -F- '{print $3}' <<<$inputDate)
-}
 createImportDir 
-importFiles
+createImageDirectory
 createDng
+deleteImportDir
 
