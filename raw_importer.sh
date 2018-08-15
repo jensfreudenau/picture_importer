@@ -1,63 +1,95 @@
-#!/bin/bash 
-target='/Volumes/HD-PATU3/Bilder'
+#!/bin/zsh 
+target='/Volumes/TT/Bilder'
 backup='/Volumes/Backup+/Bilder'
-/usr/bin/killall PTPCamera
-year=''
-month=''
-day=''
-dirStructure=''
- 
+GB64="64GB_SD/DCIM/"
+GB32="32GB_SD/DCIM/"
+sonySubFolder="100MSDCF"
+fujiSubFolder="103_FUJI"
+
+year='-1'
+month='-1'
+day='-1'
+cardDir='-1'
+dirStructure='-1'
+sdCardFolder='-1'
+sourceFolder='-1'
+useGphoto=0
+
 exportDirSammlung=()
+
+/usr/bin/killall PTPCamera
 cameraType=$1
-if [ -z "$1" ]
-  then
-    echo "No argument supplied"
-    echo "camera type is empty"
-    exit
-fi
-if [ -z "cameraType" ]; then
-    echo "++++++++++++++"
-	echo "no camera type"
-	echo "++++++++++++++" 
-	exit
-fi
+source=$2
 
-createDng() {
 
-	echo 'start create dng'
-	if [ "$cameraType" == "canon" ];
-	then
-		fileEnding="CR2"
-	elif [ "$cameraType" == "fuji" ];
-	then	
-		fileEnding="RAF"
-	else 
-		echo "++++++++++++++"
+specifyFolderPrefs() {
+    if [ "$source" -eq 64 ]; then
+        cardDir="/Volumes/$GB64"
+    fi
+
+    if [ "$source" -eq 32 ]; then
+        cardDir="/Volumes/$GB32"
+    fi
+
+    sourceFolder=$cardDir$sdCardFolder
+    if [ -z "source" ]; then
+        useGphoto=1
+    fi
+
+}
+
+specifyCameraPrefs() {
+
+	if [ -z "cameraType" ]; then
+	    echo "++++++++++++++"
 		echo "no camera type"
 		echo "++++++++++++++" 
 		exit
-	fi 
-	exportDirectory=$(pwd) 
-	for dataDir in ${exportDirSammlung[*]}
+	fi
+    if [ "$cameraType" = "canon" ];
+    then
+        sdCardFolder=''
+        fileEnding="CR2"
+    fi
+	if [ "$cameraType" = "fuji" ];
+	then	
+		sdCardFolder=$fujiSubFolder
+		fileEnding="RAF"
+	fi		
+	if [ "$cameraType" = "sony" ];
+	then
+		sdCardFolder=$sonySubFolder
+		fileEnding="ARW"
+	fi
+
+}
+
+createDng() {
+	echo 'start create dng'
+	for dataDir in ${(u)exportDirSammlung[@]}
 	do
-		echo "create dng files in $$target/$dataDir"
+		echo "create dng files in "$target"/"$dataDir
 		cd $backup/$dataDir
 		find . -iname \*$fileEnding -print0 | parallel -0 \"/Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter\" -d $target/$dataDir
 	done
 }
 
-createImportDir () {	
+createImport () {	
 	impDirectory=~/$(date +%Y%m%d)
 	echo "create import directory $impDirectory"
  	if [ ! -d "$impDirectory" ]; then
   		mkdir -pv "$impDirectory"
-  		mkdir -pv "$impDirectory/dng"
 	fi
 	cd $impDirectory
-   	/usr/local/bin/gphoto2 --get-all-files 
-   	shopt -s nullglob   
+	if [ "$useGphoto"==0 ]; then
+        echo "rsync $sourceFolder/* $impDirectory"
+        rsync $sourceFolder/* $impDirectory
+    else
+        /usr/local/bin/gphoto2 --get-all-files
+   	fi
+
    	importSammlung=(*)
-    shopt -u nullglob      
+
 }
 
 deleteImportDir(){
@@ -65,45 +97,45 @@ deleteImportDir(){
 	rm -r $impDirectory
 }
 
-moveToBackup() {
-	echo "backup files: "$backupDir/$value
-	cp $value $backupDir
+moveTo() {
+    dir=$1
+    file=$2
+	echo "backup files: "$impDirectory/$file $dir
+	rsync $impDirectory/$file $dir
 }
  
-createImageDirectory() {
-	echo $impDirectory/dng
- 	idx=0 
-	for value in ${importSammlung[*]}
+createImageDirectory() { 
+
+	for file in ${importSammlung[*]}
 	do
-		let ++i
-		DATEBITS=( $(exiftool -CreateDate -FileModifyDate -DateTimeOriginal "$value" | awk -F: '{ print $2 ":" $3 ":" $4 ":" $5 ":" $6 }' | sed 's/+[0-9]*//' | sort | grep -v 1970: | cut -d: -f1-6 | tr ':' ' ' | head -1) )
-		year=${DATEBITS[0]}
-		month=${DATEBITS[1]}
-		day=${DATEBITS[2]}	
+		DATEBITS=( $(exiftool -CreateDate -FileModifyDate -DateTimeOriginal "$file" | awk -F: '{ print $2 ":" $3 ":" $4 ":" $5 ":" $6 }' | sed 's/+[0-9]*//' | sort | grep -v 1970: | cut -d: -f1-6 | tr ':' ' ' | head -1) )
+		year=${DATEBITS[1]}
+		month=${DATEBITS[2]}
+		day=${DATEBITS[3]}
 		echo "split dates in to:" $year/$month/$day
 		dirStructure=$year/$month/$day
-		directory=$target/$year/$month/$day
-		backupDir=$backup/$year/$month/$day		
-		 
-		if [ ! -d "$directory" ]; then
-			echo "create directory: "$directory			 
-  			mkdir -pv "$directory"  			 
-  			exportDirSammlung[idx]=$dirStructure
-  			idx=$((idx+1))
-		fi
+		targetDir=$target/$dirStructure
+		backupDir=$backup/$dirStructure
 
-		if [ ! -d "$backupDir" ]; then
+        if [ ! -d "$backupDir" ]; then
 			echo "create back up directory: "$backupDir
   			mkdir -pv "$backupDir"
-		fi		 
-		moveToBackup $backupDir $value
-	done	
-	
-}
- 
+		fi
+		if [ ! -d "$targetDir" ]; then
+			echo "create directory: "$targetDir
+  			mkdir -pv "$targetDir"
+		fi
+		exportDirSammlung+=$dirStructure
+		echo '############'
 
-createImportDir
+		moveTo $backupDir $file
+	done
+
+}
+
+specifyCameraPrefs
+specifyFolderPrefs
+createImport
 createImageDirectory
 createDng
 deleteImportDir
-
